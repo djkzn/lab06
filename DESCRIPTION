@@ -1,0 +1,2 @@
+Static C++ library implementing a simple banking system with Account and Transaction classes.
+Provides thread-safe account locking and transaction management.

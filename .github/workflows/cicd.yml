@@ -1,0 +1,83 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [ master ]
+    tags:
+      - 'v*'
+  pull_request:
+
+jobs:
+  build:
+    name: Build and Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: sudo apt-get install -y lcov
+
+      - name: Build with coverage flags
+        run: |
+          cmake -H. -B_build \
+            -DBUILD_TESTS=ON \
+            -DCMAKE_CXX_FLAGS="--coverage -fprofile-arcs -ftest-coverage" \
+            -DCMAKE_EXE_LINKER_FLAGS="--coverage"
+          cmake --build _build
+
+      - name: Run tests
+        run: cd _build && ctest --verbose
+
+      - name: Collect coverage
+        run: |
+          lcov --capture \
+               --directory _build \
+               --output-file coverage.info \
+               --ignore-errors mismatch
+          lcov --remove coverage.info \
+               '/usr/*' \
+               '*/third-party/*' \
+               '*/tests/*' \
+               --output-file coverage.info
+          lcov --list coverage.info
+
+      - name: Upload coverage to Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          file: coverage.info
+          format: lcov
+
+  package:
+    name: Build CPack packages
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Install rpm
+        run: sudo apt-get install -y rpm
+
+      - name: Build and package
+        run: |
+          cmake -H. -B_build
+          cmake --build _build
+          cd _build
+          cpack -G TGZ
+          cpack -G DEB
+          cpack -G RPM
+
+      - name: Upload packages to GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: _build/*.tar.gz _build/*.deb _build/*.rpm
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
